@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TypeForge — Typing Speed Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --card: #1a1a26;
+    --border: #2a2a40;
+    --accent: #7c6af7;
+    --accent2: #f7c56a;
+    --accent3: #6af7c5;
+    --text: #e8e8f0;
+    --muted: #6b6b88;
+    --correct: #6af7c5;
+    --wrong: #f76a6a;
+    --pending: #3a3a58;
+    --glow: rgba(124, 106, 247, 0.4);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(124,106,247,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 90%, rgba(106,247,197,0.06) 0%, transparent 50%),
+      radial-gradient(ellipse 40% 60% at 60% 40%, rgba(247,197,106,0.04) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  /* HEADER */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 36px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 36px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .logo-icon {
+    font-size: 24px;
+    font-family: 'Space Mono', monospace;
+    color: var(--accent);
+    letter-spacing: -2px;
+  }
+
+  .logo-text {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .badge {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--accent2);
+    border: 1px solid var(--accent2);
+    padding: 3px 8px;
+    border-radius: 20px;
+    opacity: 0.8;
+    letter-spacing: 1px;
+  }
+
+  /* STATS BAR */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 16px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, transform 0.2s;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .stat-card.active::before { opacity: 1; }
+  .stat-card.active { border-color: var(--accent); }
+
+  .stat-card:nth-child(2).active { border-color: var(--accent3); }
+  .stat-card:nth-child(2).active::before { background: linear-gradient(90deg, transparent, var(--accent3), transparent); }
+
+  .stat-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  .stat-unit {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .stat-card:nth-child(1) .stat-value { color: var(--accent); }
+  .stat-card:nth-child(2) .stat-value { color: var(--accent3); }
+  .stat-card:nth-child(3) .stat-value { color: var(--accent2); }
+
+  /* DIFFICULTY + TIMER ROW */
+  .controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .difficulty-group {
+    display: flex;
+    gap: 8px;
+  }
+
+  .diff-btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .diff-btn:hover { color: var(--text); border-color: var(--accent); }
+  .diff-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .time-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .time-label { font-size: 12px; color: var(--muted); }
+
+  .time-btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .time-btn:hover { color: var(--text); border-color: var(--accent2); }
+  .time-btn.active { background: var(--accent2); border-color: var(--accent2); color: #000; }
+
+  /* TIMER RING */
+  .timer-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+
+  .timer-ring {
+    position: relative;
+    width: 90px;
+    height: 90px;
+  }
+
+  .timer-ring svg {
+    transform: rotate(-90deg);
+    width: 90px; height: 90px;
+  }
+
+  .timer-ring .track { fill: none; stroke: var(--border); stroke-width: 4; }
+  .timer-ring .progress {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 251;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 1s linear, stroke 0.5s;
+  }
+
+  .timer-num {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .timer-num small {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    font-weight: 400;
+  }
+
+  /* TEXT DISPLAY */
+  .test-container {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 28px;
+    margin-bottom: 20px;
+    position: relative;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+
+  .test-container.focused {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(124,106,247,0.12), 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  .test-container.error-flash {
+    border-color: var(--wrong);
+    box-shadow: 0 0 0 3px rgba(247,106,106,0.15);
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .text-display {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px;
+    line-height: 1.8;
+    letter-spacing: 0.5px;
+    word-break: break-word;
+    user-select: none;
+    position: relative;
+    max-height: 140px;
+    overflow: hidden;
+  }
+
+  .char {
+    position: relative;
+    display: inline;
+    color: var(--pending);
+    transition: color 0.05s;
+  }
+
+  .char.correct { color: var(--correct); }
+  .char.wrong { color: var(--wrong); background: rgba(247,106,106,0.15); border-radius: 2px; }
+  .char.current {
+    color: var(--text);
+    position: relative;
+  }
+
+  .char.current::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--accent);
+    animation: blink 0.8s ease-in-out infinite;
+  }
+
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+
+  .overlay-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(18,18,26,0.92);
+    border-radius: 18px;
+    font-size: 15px;
+    color: var(--muted);
+    gap: 10px;
+    letter-spacing: 0.5px;
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+    transition: opacity 0.3s;
+  }
+
+  .overlay-msg .icon { font-size: 22px; }
+  .overlay-msg:hover .click-hint { color: var(--accent); }
+
+  /* INPUT */
+  .input-area {
+    position: relative;
+  }
+
+  #typing-input {
+    width: 100%;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    color: var(--text);
+    caret-color: var(--accent);
+    outline: none;
+    transition: border-color 0.2s;
+    letter-spacing: 0.5px;
+  }
+
+  #typing-input:focus { border-color: var(--accent); }
+  #typing-input::placeholder { color: var(--muted); font-style: italic; }
+
+  .input-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .input-hint kbd {
+    font-family: 'Space Mono', monospace;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+
+  /* BUTTONS */
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    justify-content: center;
+  }
+
+  .btn {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 13px 28px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(124,106,247,0.35);
+  }
+
+  .btn-primary:hover {
+    background: #9585ff;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 28px rgba(124,106,247,0.5);
+  }
+
+  .btn-secondary {
+    background: var(--card);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:hover { color: var(--text); border-color: var(--accent); }
+
+  .btn:active { transform: scale(0.98); }
+
+  /* RESULTS MODAL */
+  .results-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,15,0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+
+  .results-overlay.show {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .results-modal {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 40px;
+    max-width: 560px;
+    width: 90%;
+    text-align: center;
+    transform: translateY(20px) scale(0.97);
+    transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .results-overlay.show .results-modal {
+    transform: translateY(0) scale(1);
+  }
+
+  .results-modal::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent3), var(--accent2));
+  }
+
+  .result-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .result-headline {
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 32px;
+  }
+
+  .result-headline span { color: var(--accent); }
+
+  .result-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .result-item {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px 12px;
+    border: 1px solid var(--border);
+  }
+
+  .result-item .big {
+    font-family: 'Space Mono', monospace;
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .result-item .lbl {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .result-item:nth-child(1) .big { color: var(--accent); }
+  .result-item:nth-child(2) .big { color: var(--accent3); }
+  .result-item:nth-child(3) .big { color: var(--accent2); }
+
+  .result-grade {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 40px;
+    padding: 10px 24px;
+    margin-bottom: 28px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .grade-badge {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--accent2);
+  }
+
+  .result-tip {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 28px;
+    line-height: 1.6;
+    max-width: 340px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .result-tip strong { color: var(--text); }
+
+  .result-btns { display: flex; gap: 12px; justify-content: center; }
+
+  /* HISTORY */
+  .history-section {
+    margin-top: 36px;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .history-item {
+    display: flex;
+    align-items: center;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    gap: 16px;
+    animation: slideIn 0.3s ease;
+    transition: border-color 0.2s;
+  }
+
+  .history-item:hover { border-color: var(--accent); }
+
+  @keyframes slideIn { from { opacity:0; transform: translateX(-10px); } to { opacity:1; transform: translateX(0); } }
+
+  .h-rank {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    width: 24px;
+  }
+
+  .h-wpm {
+    font-family: 'Space Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 60px;
+  }
+
+  .h-acc {
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    color: var(--accent3);
+    min-width: 52px;
+  }
+
+  .h-diff {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface);
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .h-time {
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: auto;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .h-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .h-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    border-radius: 2px;
+  }
+
+  /* TIPS */
+  .tips-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 28px;
+  }
+
+  .tip-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    transition: border-color 0.2s;
+  }
+
+  .tip-card:hover { border-color: var(--accent); }
+
+  .tip-icon { font-size: 22px; margin-bottom: 8px; }
+  .tip-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .tip-text { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  /* KEYBOARD VIZ */
+  .keyboard-section { margin-top: 28px; }
+
+  .keyboard-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .key-row { display: flex; gap: 5px; }
+
+  .key {
+    width: 36px;
+    height: 36px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    transition: all 0.15s;
+    border-bottom: 2px solid rgba(0,0,0,0.5);
+    cursor: default;
+    user-select: none;
+  }
+
+  .key.wide { width: 54px; }
+  .key.space { width: 220px; }
+
+  .key.pressed {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    transform: translateY(1px);
+    border-bottom-width: 1px;
+    box-shadow: 0 0 8px var(--glow);
+  }
+
+  .key.correct-key { background: rgba(106,247,197,0.2); border-color: var(--correct); color: var(--correct); }
+  .key.wrong-key { background: rgba(247,106,106,0.2); border-color: var(--wrong); color: var(--wrong); }
+
+  /* Empty state */
+  .empty-history {
+    text-align: center;
+    padding: 32px;
+    color: var(--muted);
+    font-size: 13px;
+    background: var(--card);
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+  }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    .tips-row { grid-template-columns: 1fr; }
+    .result-grid { grid-template-columns: 1fr; }
+    .text-display { font-size: 15px; }
+    .keyboard-wrap { display: none; }
+    header { flex-wrap: wrap; gap: 12px; }
+  }
+
+  /* Number animation */
+  .pop {
+    animation: pop 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  @keyframes pop { 0% { transform: scale(1.3); } 100% { transform: scale(1); } }
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <span class="logo-icon">{}</span>
+      <span class="logo-text">Type<span>Forge</span></span>
+    </div>
+    <span class="badge">SPEED ANALYZER</span>
+  </header>
+
+  <!-- STATS -->
+  <div class="stats-bar">
+    <div class="stat-card" id="wpm-card">
+      <div class="stat-label">Speed</div>
+      <div class="stat-value" id="live-wpm">0</div>
+      <div class="stat-unit">WPM</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Accuracy</div>
+      <div class="stat-value" id="live-acc">100</div>
+      <div class="stat-unit">%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Errors</div>
+      <div class="stat-value" id="live-err">0</div>
+      <div class="stat-unit">keystrokes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Progress</div>
+      <div class="stat-value" id="live-prog">0</div>
+      <div class="stat-unit">chars typed</div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls-row">
+    <div>
+      <div class="stat-label" style="margin-bottom:8px">Difficulty</div>
+      <div class="difficulty-group">
+        <button class="diff-btn active" data-diff="easy" onclick="setDifficulty(this)">Easy</button>
+        <button class="diff-btn" data-diff="medium" onclick="setDifficulty(this)">Medium</button>
+        <button class="diff-btn" data-diff="hard" onclick="setDifficulty(this)">Hard</button>
+        <button class="diff-btn" data-diff="pro" onclick="setDifficulty(this)">Pro</button>
+      </div>
+    </div>
+    <div>
+      <div class="stat-label" style="margin-bottom:8px">Duration</div>
+      <div class="time-group">
+        <button class="time-btn" data-time="30" onclick="setTime(this)">30s</button>
+        <button class="time-btn active" data-time="60" onclick="setTime(this)">60s</button>
+        <button class="time-btn" data-time="120" onclick="setTime(this)">2min</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMER RING -->
+  <div class="timer-wrap">
+    <div class="timer-ring">
+      <svg viewBox="0 0 90 90">
+        <circle class="track" cx="45" cy="45" r="40"/>
+        <circle class="progress" cx="45" cy="45" r="40" id="timer-progress"/>
+      </svg>
+      <div class="timer-num">
+        <span id="timer-display">60</span>
+        <small>SEC</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEST AREA -->
+  <div class="test-container" id="test-container">
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+    <div class="text-display" id="text-display"></div>
+    <div class="overlay-msg" id="overlay" onclick="startTest()">
+      <span class="icon">⌨️</span>
+      <span class="click-hint">Click here or start typing to begin</span>
+    </div>
+  </div>
+
+  <!-- INPUT -->
+  <div class="input-area">
+    <input
+      type="text"
+      id="typing-input"
+      placeholder="Start typing here…"
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="off"
+      spellcheck="false"
+      oninput="handleInput(event)"
+      onkeydown="handleKey(event)"
+      onfocus="onInputFocus()"
+      onblur="onInputBlur()"
+      disabled
+    />
+    <div class="input-hint">
+      <span>Focus the input and start typing — timer starts automatically</span>
+      <span><kbd>Tab</kbd> to restart</span>
+    </div>
+  </div>
+
+  <!-- BUTTONS -->
+  <div class="btn-row">
+    <button class="btn btn-primary" onclick="restartTest()">↺ Restart</button>
+    <button class="btn btn-secondary" onclick="newTest()">⇌ New Text</button>
+  </div>
+
+  <!-- KEYBOARD VIZ -->
+  <div class="keyboard-section">
+    <div class="section-title">Live Keyboard</div>
+    <div class="keyboard-wrap" id="keyboard">
+      <div class="key-row" id="row1"></div>
+      <div class="key-row" id="row2"></div>
+      <div class="key-row" id="row3"></div>
+      <div class="key-row" id="row4"></div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="history-section">
+    <div class="section-title">Session History</div>
+    <div class="history-list" id="history-list">
+      <div class="empty-history">Complete a test to see your results here</div>
+    </div>
+  </div>
+
+  <!-- TIPS -->
+  <div class="tips-row">
+    <div class="tip-card">
+      <div class="tip-icon">🎯</div>
+      <div class="tip-title">Accuracy First</div>
+      <div class="tip-text">Focus on hitting the right keys before speed. Accuracy above 95% is the foundation of fast typing.</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-icon">🏠</div>
+      <div class="tip-title">Home Row</div>
+      <div class="tip-text">Keep fingers on ASDF JKL; — return after every keystroke. This is the single biggest speed booster.</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-icon">👁️</div>
+      <div class="tip-title">Don't Look Down</div>
+      <div class="tip-text">Train yourself to type without looking at the keyboard. Muscle memory builds fast with consistent practice.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- RESULTS MODAL -->
+<div class="results-overlay" id="results-overlay">
+  <div class="results-modal">
+    <div class="result-title">Test Complete</div>
+    <div class="result-headline" id="result-headline">You typed <span id="res-wpm">0</span> WPM</div>
+    <div class="result-grid">
+      <div class="result-item">
+        <div class="big" id="res-wpm2">0</div>
+        <div class="lbl">WPM</div>
+      </div>
+      <div class="result-item">
+        <div class="big" id="res-acc">0%</div>
+        <div class="lbl">Accuracy</div>
+      </div>
+      <div class="result-item">
+        <div class="big" id="res-err">0</div>
+        <div class="lbl">Errors</div>
+      </div>
+    </div>
+    <div class="result-grade">
+      <span>Performance Level:</span>
+      <span class="grade-badge" id="res-grade">—</span>
+    </div>
+    <div class="result-tip" id="res-tip"></div>
+    <div class="result-btns">
+      <button class="btn btn-primary" onclick="closeResults(); restartTest();">↺ Try Again</button>
+      <button class="btn btn-secondary" onclick="closeResults(); newTest();">⇌ New Text</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- WORD BANKS ----
+const wordBanks = {
+  easy: ['the','be','to','of','and','a','in','that','have','it','for','not','on','with','he','as','you','do','at','this','but','his','by','from','they','we','say','her','she','or','an','will','my','one','all','would','there','their','what','so','up','out','if','about','who','get','which','go','me','when','make','can','like','time','no','just','him','know','take','people','into','year','your','good','some','could','them','see','other','than','then','now','look','only','come','its','over','think','also','back','after','use','two','how','our','work','first','well','way','even','new','want','because','any','these','give','day','most','us'],
+  medium: ['about','above','action','actually','after','again','against','almost','alone','along','already','although','always','among','another','answer','around','article','because','before','being','between','business','certain','change','choose','comes','common','country','create','decide','different','during','either','enough','example','expect','experience','explain','feature','finally','follow','forget','forward','found','general','getting','global','happen','having','health','history','however','important','include','inside','instead','interest','issue','itself','knowledge','language','largely','later','learn','leave','likely','little','living','looking','making','manage','market','meaning','might','minute','moment','morning','moving','natural','never','nothing','number','often','other','outside','patient','people','perhaps','place','point','possible','present','problem','process','program','provide','question','quickly','rather','really','reason','receive','recent','remain','result','return','review','school','second','should','simple','social','special','specific','start','still','story','strong','student','system','things','though','thought','through','together','toward','under','until','usually','value','various','voice','whether','while','within','without','working','world','would','written','young'],
+  hard: ['accomplish','acknowledge','additional','administration','advantageous','ambiguous','approximately','architecture','autonomous','breakthrough','bureaucratic','circumstances','collaboration','complicated','comprehensive','conceptual','consequently','controversial','coordination','cryptography','deliberately','dependency','deterioration','development','disadvantage','distinguished','documentation','dramatically','ecclesiastical','eligibility','entrepreneur','environmental','equilibrium','establishment','evolutionary','exceptional','extraterrestrial','formidable','functionality','government','hypothetically','identification','implementation','infrastructure','intelligence','interchangeable','international','interpretation','investigation','jurisdiction','knowledgeable','manufacturing','metropolitan','multidimensional','nevertheless','notification','occasionally','optimization','organization','overwhelming','particularly','phenomenon','philosophical','predominantly','prioritization','productivity','progressively','psychological','qualification','questionnaire','recommendation','reconciliation','reorganization','responsibility','retrospective','simultaneously','specification','substantially','supplementary','systematically','technological','telecommunication','transformation','transparency','unfortunately','unprecedented','unpredictable','vulnerability','whatsoever'],
+  pro: ['abstraction','acknowledgment','aforementioned','agglomeration','algorithmic','anachronistic','anthropomorphic','approximation','authentication','authorization','bibliographical','bureaucratically','cardiovascular','circumstances','classification','coevolutionary','commemoration','commensurable','communication','complementary','comprehensible','concentration','configuration','consequential','constitutional','contextualizing','counterintuitive','crystallization','decomposition','deontological','differentiation','disambiguation','disenfranchised','documentation','electromagnetic','epistemological','extrapolation','fundamentalism','heterogeneous','hierarchically','hypothetically','identification','implementation','incomprehensible','indistinguishable','infrastructure','instantaneous','interoperability','juxtaposition','manifestation','metamorphosis','methodological','misconceptualization','multifaceted','nondeterministic','obfuscation','phenomenological','physiological','probabilistic','procrastination','quantification','quintessential','rationalization','reconfiguration','reconceptualization','retrospective','revolutionary','simultaneously','sophisticated','specification','standardization','stratification','subconsciously','synchronization','systematically','technological','teleological','thermodynamic','transformation','unconditional','underrepresented','unprecedented','virtualization','vulnerability']
+};
+
+// ---- STATE ----
+let currentDiff = 'easy';
+let currentTime = 60;
+let testWords = [];
+let currentIndex = 0;
+let correctChars = 0;
+let wrongChars = 0;
+let totalTyped = 0;
+let timerInterval = null;
+let timeLeft = 60;
+let started = false;
+let finished = false;
+let history = [];
+let charEls = [];
+
+// ---- KEYBOARD LAYOUT ----
+const rows = [
+  ['`','1','2','3','4','5','6','7','8','9','0','-','='],
+  ['Q','W','E','R','T','Y','U','I','O','P','[',']'],
+  ['A','S','D','F','G','H','J','K','L',';',"'"],
+  ['Z','X','C','V','B','N','M',',','.','/']
+];
+
+function buildKeyboard() {
+  rows.forEach((row, ri) => {
+    const rowEl = document.getElementById(`row${ri+1}`);
+    row.forEach(key => {
+      const k = document.createElement('div');
+      k.className = 'key';
+      k.textContent = key;
+      k.id = `key-${key.toLowerCase()}`;
+      rowEl.appendChild(k);
+    });
+  });
+  // Space
+  const r4 = document.getElementById('row4');
+  const sp = document.createElement('div');
+  sp.className = 'key space';
+  sp.textContent = 'SPACE';
+  sp.id = 'key- ';
+  const wrap = document.createElement('div');
+  wrap.className = 'key-row';
+  wrap.style.marginTop = '4px';
+  wrap.appendChild(sp);
+  document.getElementById('keyboard').appendChild(wrap);
+}
+
+function flashKey(char, correct) {
+  const id = `key-${char.toLowerCase()}`;
+  const k = document.getElementById(id);
+  if (!k) return;
+  k.classList.remove('correct-key','wrong-key','pressed');
+  k.classList.add(correct ? 'correct-key' : 'wrong-key');
+  setTimeout(() => k.classList.remove('correct-key','wrong-key'), 400);
+}
+
+// ---- TEXT GENERATION ----
+function generateText(diff) {
+  const bank = wordBanks[diff];
+  const count = 60;
+  const words = [];
+  for (let i = 0; i < count; i++) {
+    words.push(bank[Math.floor(Math.random() * bank.length)]);
+  }
+  return words;
+}
+
+function renderText() {
+  const display = document.getElementById('text-display');
+  display.innerHTML = '';
+  charEls = [];
+  testWords.forEach((word, wi) => {
+    word.split('').forEach((ch, ci) => {
+      const span = document.createElement('span');
+      span.className = 'char';
+      span.textContent = ch;
+      span.dataset.wi = wi;
+      span.dataset.ci = ci;
+      display.appendChild(span);
+      charEls.push(span);
+    });
+    if (wi < testWords.length - 1) {
+      const sp = document.createElement('span');
+      sp.className = 'char';
+      sp.textContent = ' ';
+      sp.dataset.wi = wi;
+      sp.dataset.ci = 'sp';
+      display.appendChild(sp);
+      charEls.push(sp);
+    }
+  });
+  updateCursor();
+}
+
+function updateCursor() {
+  charEls.forEach((el, i) => {
+    el.classList.remove('current');
+    if (i === currentIndex) el.classList.add('current');
+  });
+}
+
+function scrollToChar() {
+  if (charEls[currentIndex]) {
+    charEls[currentIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+// ---- TEST FLOW ----
+function setDifficulty(btn) {
+  document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentDiff = btn.dataset.diff;
+  if (!started) newTest();
+}
+
+function setTime(btn) {
+  document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentTime = parseInt(btn.dataset.time);
+  timeLeft = currentTime;
+  updateTimerDisplay();
+  if (!started) resetState();
+}
+
+function resetState() {
+  clearInterval(timerInterval);
+  started = false;
+  finished = false;
+  currentIndex = 0;
+  correctChars = 0;
+  wrongChars = 0;
+  totalTyped = 0;
+  timeLeft = currentTime;
+  updateTimerDisplay();
+  updateTimerRing(1);
+  updateStats(0, 100, 0, 0);
+  document.getElementById('prog-fill').style.width = '0%';
+}
+
+function newTest() {
+  resetState();
+  testWords = generateText(currentDiff);
+  renderText();
+  document.getElementById('typing-input').value = '';
+  document.getElementById('typing-input').disabled = false;
+  document.getElementById('overlay').style.display = 'flex';
+  document.getElementById('test-container').classList.remove('focused','error-flash');
+}
+
+function startTest() {
+  if (started || finished) return;
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('test-container').classList.add('focused');
+  document.getElementById('typing-input').disabled = false;
+  document.getElementById('typing-input').focus();
+  started = true;
+
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateTimerDisplay();
+    updateTimerRing(timeLeft / currentTime);
+    if (timeLeft <= 0) endTest();
+  }, 1000);
+}
+
+function endTest() {
+  clearInterval(timerInterval);
+  finished = true;
+  started = false;
+  document.getElementById('typing-input').disabled = true;
+  document.getElementById('test-container').classList.remove('focused');
+  charEls.forEach(el => el.classList.remove('current'));
+
+  const elapsed = currentTime - timeLeft;
+  const wpm = elapsed > 0 ? Math.round((correctChars / 5) / (elapsed / 60)) : 0;
+  const acc = totalTyped > 0 ? Math.round((correctChars / totalTyped) * 100) : 100;
+
+  addHistory(wpm, acc, wrongChars, currentDiff, currentTime);
+  showResults(wpm, acc, wrongChars);
+}
+
+function restartTest() {
+  closeResults();
+  resetState();
+  renderText();
+  document.getElementById('typing-input').value = '';
+  document.getElementById('typing-input').disabled = false;
+  document.getElementById('overlay').style.display = 'flex';
+  document.getElementById('test-container').classList.remove('focused','error-flash');
+}
+
+// ---- INPUT ----
+function handleInput(e) {
+  if (finished) return;
+  if (!started) startTest();
+
+  const input = e.target;
+  const typed = input.value;
+
+  if (typed.length === 0) return;
+
+  const ch = typed[typed.length - 1];
+  const expected = charEls[currentIndex]?.textContent;
+
+  totalTyped++;
+
+  if (ch === expected) {
+    charEls[currentIndex].classList.remove('wrong');
+    charEls[currentIndex].classList.add('correct');
+    correctChars++;
+    flashKey(ch, true);
+    currentIndex++;
+  } else {
+    if (!charEls[currentIndex].classList.contains('wrong')) {
+      charEls[currentIndex].classList.add('wrong');
+      wrongChars++;
+      flashKey(ch, false);
+      errorFlash();
+    }
+    // don't advance index on wrong
+    input.value = typed.slice(0, -1);
+    return;
+  }
+
+  input.value = '';
+  updateCursor();
+  scrollToChar();
+
+  // Progress
+  const prog = Math.round((currentIndex / charEls.length) * 100);
+  document.getElementById('prog-fill').style.width = prog + '%';
+
+  // Live stats
+  const elapsed = currentTime - timeLeft;
+  const wpm = elapsed > 0 ? Math.round((correctChars / 5) / (elapsed / 60)) : 0;
+  const acc = totalTyped > 0 ? Math.round((correctChars / totalTyped) * 100) : 100;
+  updateStats(wpm, acc, wrongChars, currentIndex);
+
+  if (currentIndex >= charEls.length) endTest();
+}
+
+function handleKey(e) {
+  if (e.key === 'Tab') { e.preventDefault(); restartTest(); }
+}
+
+function onInputFocus() {
+  if (!started && !finished) {
+    document.getElementById('test-container').classList.add('focused');
+  }
+}
+
+function onInputBlur() {
+  if (!started) document.getElementById('test-container').classList.remove('focused');
+}
+
+function errorFlash() {
+  const c = document.getElementById('test-container');
+  c.classList.add('error-flash');
+  setTimeout(() => c.classList.remove('error-flash'), 300);
+}
+
+// ---- UI UPDATES ----
+function updateStats(wpm, acc, err, prog) {
+  animateNum('live-wpm', wpm);
+  animateNum('live-acc', acc);
+  animateNum('live-err', err);
+  animateNum('live-prog', prog);
+}
+
+function animateNum(id, val) {
+  const el = document.getElementById(id);
+  if (el.textContent !== String(val)) {
+    el.textContent = val;
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+  }
+}
+
+function updateTimerDisplay() {
+  const m = Math.floor(timeLeft / 60);
+  const s = timeLeft % 60;
+  document.getElementById('timer-display').textContent = m > 0 ? `${m}:${s.toString().padStart(2,'0')}` : s;
+  const p = document.getElementById('timer-progress');
+  if (timeLeft <= 10) p.style.stroke = 'var(--wrong)';
+  else if (timeLeft <= 20) p.style.stroke = 'var(--accent2)';
+  else p.style.stroke = 'var(--accent)';
+}
+
+function updateTimerRing(ratio) {
+  const circ = 251;
+  document.getElementById('timer-progress').style.strokeDashoffset = circ * (1 - ratio);
+}
+
+// ---- RESULTS ----
+function getGrade(wpm, acc) {
+  if (wpm >= 100 && acc >= 97) return { grade: '🏆 Elite', tip: `Exceptional performance! You're typing at professional coder speed. Keep it up and try the Pro difficulty.` };
+  if (wpm >= 80 && acc >= 95) return { grade: '⭐ Expert', tip: `Outstanding! You're faster than 90% of typists. Focus on Pro texts to push past 100 WPM.` };
+  if (wpm >= 60 && acc >= 93) return { grade: '🚀 Advanced', tip: `Great speed! Work on reducing errors to improve your net WPM score. Try Hard difficulty for a challenge.` };
+  if (wpm >= 40 && acc >= 90) return { grade: '📈 Intermediate', tip: `Solid progress! You're above the average typist. Practice daily for 15 min to break 60 WPM.` };
+  if (wpm >= 25) return { grade: '🌱 Beginner', tip: `Good start! Focus on accuracy before speed. Slow down and aim for 95%+ accuracy consistently.` };
+  return { grade: '🔰 Novice', tip: `Keep practicing! Home row technique and not looking at the keyboard will dramatically improve your speed.` };
+}
+
+function showResults(wpm, acc, err) {
+  const { grade, tip } = getGrade(wpm, acc);
+  document.getElementById('res-wpm').textContent = wpm;
+  document.getElementById('res-wpm2').textContent = wpm;
+  document.getElementById('res-acc').textContent = acc + '%';
+  document.getElementById('res-err').textContent = err;
+  document.getElementById('res-grade').textContent = grade;
+  document.getElementById('res-tip').innerHTML = tip;
+  document.getElementById('result-headline').innerHTML = `You typed <span id="res-wpm">${wpm}</span> WPM`;
+  setTimeout(() => document.getElementById('results-overlay').classList.add('show'), 200);
+}
+
+function closeResults() {
+  document.getElementById('results-overlay').classList.remove('show');
+}
+
+document.getElementById('results-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeResults();
+});
+
+// ---- HISTORY ----
+function addHistory(wpm, acc, err, diff, dur) {
+  history.unshift({ wpm, acc, err, diff, dur, ts: new Date() });
+  if (history.length > 10) history.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  if (history.length === 0) {
+    list.innerHTML = '<div class="empty-history">Complete a test to see your results here</div>';
+    return;
+  }
+  const maxWpm = Math.max(...history.map(h => h.wpm));
+  list.innerHTML = history.map((h, i) => `
+    <div class="history-item">
+      <span class="h-rank">#${i+1}</span>
+      <span class="h-wpm">${h.wpm}</span>
+      <div class="h-bar"><div class="h-bar-fill" style="width:${maxWpm > 0 ? Math.round((h.wpm/maxWpm)*100) : 0}%"></div></div>
+      <span class="h-acc">${h.acc}%</span>
+      <span class="h-diff">${h.diff}</span>
+      <span class="h-time">${h.dur}s</span>
+    </div>
+  `).join('');
+}
+
+// ---- INIT ----
+buildKeyboard();
+newTest();
+updateTimerDisplay();
+updateTimerRing(1);
+</script>
+</body>
+</html>
