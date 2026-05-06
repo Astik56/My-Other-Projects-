@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TypeForge 3D — Typing Speed Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- GSAP -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/TextPlugin.min.js"></script>
+
+<style>
+:root {
+  --bg:       #060810;
+  --surface:  #0d1020;
+  --card:     #111428;
+  --border:   rgba(99,120,255,0.18);
+  --border2:  rgba(99,120,255,0.08);
+  --accent:   #6378ff;
+  --accent2:  #ff6b6b;
+  --accent3:  #63ffda;
+  --accent4:  #ffd166;
+  --correct:  #63ffda;
+  --wrong:    #ff4f6e;
+  --pending:  rgba(180,190,255,0.22);
+  --text:     #e2e8ff;
+  --muted:    #5a6090;
+  --glow:     rgba(99,120,255,0.5);
+  --glow2:    rgba(99,255,218,0.4);
+  --glow3:    rgba(255,79,110,0.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  cursor: none;
+}
+
+/* ── CUSTOM CURSOR ─────────────────────────── */
+#cursor-dot {
+  position: fixed; width: 8px; height: 8px;
+  background: var(--accent); border-radius: 50%;
+  pointer-events: none; z-index: 9999;
+  transform: translate(-50%,-50%);
+  transition: background 0.2s;
+  box-shadow: 0 0 12px var(--glow);
+}
+#cursor-ring {
+  position: fixed; width: 32px; height: 32px;
+  border: 1.5px solid rgba(99,120,255,0.5);
+  border-radius: 50%; pointer-events: none; z-index: 9998;
+  transform: translate(-50%,-50%);
+  transition: width 0.3s, height 0.3s, border-color 0.3s;
+}
+body.typing #cursor-dot { background: var(--accent3); box-shadow: 0 0 12px var(--glow2); }
+body.error  #cursor-dot { background: var(--wrong);   box-shadow: 0 0 16px var(--glow3); }
+
+/* ── THREE.JS CANVAS ───────────────────────── */
+#bg-canvas {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none;
+}
+
+/* ── LAYOUT ────────────────────────────────── */
+.wrapper {
+  position: relative; z-index: 1;
+  max-width: 960px; margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+/* ── HEADER ────────────────────────────────── */
+header {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 36px;
+  border-bottom: 1px solid var(--border2);
+  margin-bottom: 40px;
+  opacity: 0;
+}
+
+.logo-wrap { display: flex; flex-direction: column; gap: 2px; }
+.logo {
+  font-family: 'Orbitron', monospace;
+  font-size: 20px; font-weight: 900;
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent3));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.logo-sub {
+  font-size: 9px; letter-spacing: 4px;
+  text-transform: uppercase; color: var(--muted);
+}
+
+.header-badge {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  letter-spacing: 2px; padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px; color: var(--accent3);
+  background: rgba(99,255,218,0.06);
+  animation: pulse-border 2s ease-in-out infinite;
+}
+@keyframes pulse-border {
+  0%,100% { border-color: rgba(99,255,218,0.2); box-shadow: none; }
+  50%      { border-color: rgba(99,255,218,0.6); box-shadow: 0 0 12px rgba(99,255,218,0.15); }
+}
+
+/* ── STATS GRID ────────────────────────────── */
+.stats-bar {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  gap: 14px; margin-bottom: 32px; opacity: 0;
+}
+
+.stat-card {
+  background: var(--card); border: 1px solid var(--border2);
+  border-radius: 16px; padding: 20px 16px; text-align: center;
+  position: relative; overflow: hidden;
+  transition: border-color 0.3s, transform 0.2s;
+  cursor: default;
+}
+.stat-card::before {
+  content: ''; position: absolute; top: 0; left: -100%;
+  width: 60%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(99,120,255,0.06), transparent);
+  transition: left 0.6s ease;
+}
+.stat-card:hover::before { left: 140%; }
+.stat-card::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0; transition: opacity 0.3s;
+}
+.stat-card:hover::after, .stat-card.active::after { opacity: 1; }
+.stat-card:hover { border-color: var(--border); transform: translateY(-2px); }
+
+.stat-icon { font-size: 18px; margin-bottom: 6px; }
+.stat-label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.stat-value {
+  font-family: 'Orbitron', monospace; font-size: 30px; font-weight: 700;
+  line-height: 1; transition: color 0.3s;
+  background: linear-gradient(135deg, var(--accent), var(--accent3));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.stat-card:nth-child(2) .stat-value { background: linear-gradient(135deg, var(--accent3), #63f0ff); -webkit-background-clip: text; background-clip: text; }
+.stat-card:nth-child(3) .stat-value { background: linear-gradient(135deg, var(--accent4), #ffaa33); -webkit-background-clip: text; background-clip: text; }
+.stat-card:nth-child(4) .stat-value { background: linear-gradient(135deg, var(--accent2), #ff9f43); -webkit-background-clip: text; background-clip: text; }
+.stat-unit { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+/* ── CONTROLS ──────────────────────────────── */
+.controls-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px; gap: 16px; flex-wrap: wrap; opacity: 0;
+}
+
+.ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+.ctrl-label { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); }
+.btn-group  { display: flex; gap: 8px; }
+
+.pill {
+  font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 1px;
+  padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--muted); cursor: pointer;
+  transition: all 0.25s; position: relative; overflow: hidden;
+}
+.pill::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, var(--accent), var(--accent3));
+  opacity: 0; transition: opacity 0.25s;
+}
+.pill span { position: relative; z-index: 1; }
+.pill:hover { color: var(--text); border-color: var(--accent); }
+.pill.active {
+  border-color: var(--accent); color: #fff;
+  box-shadow: 0 0 16px rgba(99,120,255,0.3);
+}
+.pill.active::before { opacity: 1; }
+
+/* ── TIMER ─────────────────────────────────── */
+.timer-row { display: flex; justify-content: center; margin-bottom: 24px; opacity: 0; }
+
+.timer-3d-wrap {
+  position: relative; width: 110px; height: 110px;
+  display: flex; align-items: center; justify-content: center;
+}
+.timer-svg { transform: rotate(-90deg); }
+.timer-track { fill: none; stroke: var(--border); stroke-width: 4; }
+.timer-prog {
+  fill: none; stroke-linecap: round;
+  stroke-dasharray: 283; stroke-dashoffset: 0;
+  stroke-width: 4; transition: stroke 0.5s;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.timer-inner {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.timer-num {
+  font-family: 'Orbitron', monospace; font-size: 26px; font-weight: 900;
+  background: linear-gradient(135deg, var(--accent), var(--accent3));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  line-height: 1;
+}
+.timer-sec { font-size: 9px; color: var(--muted); letter-spacing: 2px; margin-top: 2px; }
+
+/* ── TEST AREA ─────────────────────────────── */
+.test-container {
+  background: var(--card); border: 1px solid var(--border2);
+  border-radius: 20px; padding: 30px; margin-bottom: 20px;
+  position: relative; overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  opacity: 0;
+}
+.test-container.focused {
+  border-color: rgba(99,120,255,0.5);
+  box-shadow: 0 0 0 3px rgba(99,120,255,0.1), 0 20px 60px rgba(0,0,0,0.5);
+}
+.test-container.error-shake {
+  animation: shake 0.35s cubic-bezier(0.36,0.07,0.19,0.97);
+}
+@keyframes shake {
+  10%,90%  { transform: translateX(-3px); }
+  20%,80%  { transform: translateX(4px); }
+  30%,50%,70% { transform: translateX(-5px); }
+  40%,60%  { transform: translateX(5px); }
+}
+
+/* Scanline effect */
+.test-container::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(99,120,255,0.015) 2px, rgba(99,120,255,0.015) 4px
+  );
+  border-radius: 20px;
+}
+
+.progress-bar { height: 3px; background: var(--border2); border-radius: 2px; margin-bottom: 22px; overflow: hidden; }
+.progress-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent3));
+  border-radius: 2px; transition: width 0.3s ease;
+  box-shadow: 0 0 8px var(--glow);
+}
+
+/* ── TEXT DISPLAY ──────────────────────────── */
+.text-display {
+  font-family: 'Space Mono', monospace;
+  font-size: 17px; line-height: 2;
+  letter-spacing: 0.5px; word-break: break-word;
+  user-select: none; max-height: 136px; overflow: hidden;
+  position: relative;
+}
+
+.char { position: relative; display: inline; transition: color 0.07s; }
+.char.correct { color: var(--correct); }
+.char.wrong   {
+  color: var(--wrong);
+  text-decoration: underline wavy var(--wrong);
+  text-decoration-thickness: 2px;
+  background: rgba(255,79,110,0.13);
+  border-radius: 2px;
+  animation: wrongPop 0.25s cubic-bezier(0.34,1.5,0.64,1);
+}
+@keyframes wrongPop {
+  0%   { transform: scale(1.4) rotate(-4deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+.char.current { color: var(--text); position: relative; }
+.char.current::after {
+  content: '';
+  position: absolute; bottom: 2px; left: 0; width: 100%; height: 2px;
+  background: var(--accent);
+  animation: blink 0.75s ease-in-out infinite;
+  box-shadow: 0 0 6px var(--glow);
+  border-radius: 1px;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+.char.pending { color: var(--pending); }
+
+/* Mistake tooltip */
+.mistake-tooltip {
+  position: absolute; background: var(--wrong); color: white;
+  font-family: 'Space Mono', monospace; font-size: 10px;
+  padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+  z-index: 10; pointer-events: none; top: -28px; left: 0;
+  opacity: 0; animation: tooltipFade 1.8s ease forwards;
+}
+.mistake-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 8px;
+  border: 5px solid transparent; border-top-color: var(--wrong);
+}
+@keyframes tooltipFade { 0%{opacity:1;transform:translateY(0)} 60%{opacity:1;transform:translateY(-4px)} 100%{opacity:0;transform:translateY(-8px)} }
+
+/* Overlay */
+.overlay-msg {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(11,13,26,0.88); border-radius: 20px;
+  font-size: 14px; color: var(--muted);
+  cursor: pointer; transition: all 0.3s;
+  gap: 10px; backdrop-filter: blur(4px);
+}
+.overlay-msg:hover { background: rgba(11,13,26,0.78); }
+.overlay-icon {
+  font-size: 32px;
+  animation: floatIcon 3s ease-in-out infinite;
+}
+@keyframes floatIcon { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+.overlay-hint { font-size: 15px; color: var(--text); font-weight: 500; }
+.overlay-sub  { font-size: 12px; }
+
+/* ── INPUT ─────────────────────────────────── */
+.input-wrap { position: relative; margin-bottom: 16px; opacity: 0; }
+
+#typing-input {
+  width: 100%; padding: 16px 24px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; font-family: 'Space Mono', monospace;
+  font-size: 16px; color: var(--text);
+  caret-color: var(--accent3); outline: none;
+  transition: border-color 0.25s, box-shadow 0.25s;
+  letter-spacing: 0.5px;
+}
+#typing-input:focus {
+  border-color: rgba(99,120,255,0.6);
+  box-shadow: 0 0 0 3px rgba(99,120,255,0.1), 0 0 24px rgba(99,120,255,0.1);
+}
+#typing-input::placeholder { color: var(--muted); font-style: italic; }
+#typing-input:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.input-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: var(--muted); margin-top: 8px;
+}
+.input-footer kbd {
+  font-family: 'Orbitron', monospace; font-size: 9px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 6px;
+}
+
+/* ── MISTAKE LOG ───────────────────────────── */
+.mistake-log {
+  background: var(--card); border: 1px solid rgba(255,79,110,0.2);
+  border-radius: 14px; padding: 16px 20px; margin-bottom: 20px;
+  display: none; opacity: 0;
+}
+.mistake-log-title {
+  font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 2px;
+  color: var(--accent2); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+.mistake-log-title::before { content: ''; width: 8px; height: 8px; background: var(--accent2); border-radius: 50%; display: inline-block; animation: pulse2 1s infinite; }
+@keyframes pulse2 { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.mistake-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mistake-chip {
+  font-family: 'Space Mono', monospace; font-size: 11px;
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(255,79,110,0.12); border: 1px solid rgba(255,79,110,0.25);
+  color: var(--accent2); display: flex; align-items: center; gap: 5px;
+}
+.mistake-chip .typed-wrong { color: var(--wrong); font-weight: 700; }
+.mistake-chip .expected { color: var(--accent3); }
+
+/* ── BUTTONS ───────────────────────────────── */
+.btn-row { display: flex; gap: 12px; justify-content: center; margin-top: 8px; opacity: 0; }
+
+.btn {
+  font-family: 'Orbitron', monospace; font-size: 11px; letter-spacing: 1px;
+  padding: 13px 28px; border-radius: 10px; border: none; cursor: pointer;
+  transition: all 0.25s; position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 8px;
+}
+.btn::before {
+  content: ''; position: absolute; top: 50%; left: 50%;
+  width: 0; height: 0; background: rgba(255,255,255,0.15);
+  border-radius: 50%; transform: translate(-50%,-50%);
+  transition: width 0.4s, height 0.4s;
+}
+.btn:active::before { width: 200%; height: 200%; }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #8a6bff);
+  color: white; box-shadow: 0 4px 20px rgba(99,120,255,0.4);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(99,120,255,0.55); }
+
+.btn-secondary {
+  background: var(--card); color: var(--muted);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { color: var(--text); border-color: var(--accent); }
+.btn:active { transform: scale(0.97) !important; }
+
+/* ── KEYBOARD ──────────────────────────────── */
+.keyboard-section { margin-top: 36px; opacity: 0; }
+.section-title {
+  font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 12px;
+}
+.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
+
+.keyboard-wrap {
+  background: var(--card); border: 1px solid var(--border2);
+  border-radius: 16px; padding: 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.key-row { display: flex; gap: 5px; }
+.key {
+  width: 38px; height: 38px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Orbitron', monospace; font-size: 9px; color: var(--muted);
+  transition: all 0.12s; border-bottom: 2px solid rgba(0,0,0,0.5);
+  user-select: none; cursor: default; letter-spacing: 0;
+}
+.key.space-key { width: 200px; }
+.key.pressed {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  transform: translateY(1px); border-bottom-width: 1px;
+  box-shadow: 0 0 14px var(--glow), 0 0 28px rgba(99,120,255,0.25);
+}
+.key.correct-key {
+  background: rgba(99,255,218,0.2); border-color: var(--correct);
+  color: var(--correct); box-shadow: 0 0 8px var(--glow2);
+}
+.key.wrong-key {
+  background: rgba(255,79,110,0.2); border-color: var(--wrong);
+  color: var(--wrong); box-shadow: 0 0 8px var(--glow3);
+}
+
+/* ── HISTORY ───────────────────────────────── */
+.history-section { margin-top: 36px; opacity: 0; }
+.history-list  { display: flex; flex-direction: column; gap: 8px; }
+.history-item {
+  display: flex; align-items: center; background: var(--card);
+  border: 1px solid var(--border2); border-radius: 10px;
+  padding: 13px 16px; gap: 16px;
+  animation: slideIn 0.35s ease both;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.history-item:hover { border-color: var(--border); transform: translateX(3px); }
+@keyframes slideIn { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
+
+.h-rank { font-family: 'Orbitron', monospace; font-size: 10px; color: var(--muted); width: 22px; }
+.h-wpm  { font-family: 'Orbitron', monospace; font-size: 20px; font-weight: 700; color: var(--accent); min-width: 60px; }
+.h-acc  { font-family: 'Orbitron', monospace; font-size: 13px; color: var(--accent3); min-width: 52px; }
+.h-err  { font-size: 11px; color: var(--accent2); min-width: 40px; }
+.h-diff {
+  font-family: 'Orbitron', monospace; font-size: 9px; color: var(--muted);
+  background: var(--surface); padding: 3px 10px;
+  border-radius: 20px; border: 1px solid var(--border);
+}
+.h-bar { flex: 1; height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+.h-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent3)); border-radius: 2px; }
+.h-time { font-family: 'Orbitron', monospace; font-size: 10px; color: var(--muted); }
+
+.empty-history {
+  text-align: center; padding: 28px; color: var(--muted); font-size: 13px;
+  background: var(--card); border: 1px dashed var(--border2); border-radius: 12px;
+}
+
+/* ── RESULTS MODAL ─────────────────────────── */
+.results-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(6,8,16,0.88); backdrop-filter: blur(16px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.4s;
+  padding: 20px;
+}
+.results-overlay.show { opacity: 1; pointer-events: all; }
+
+.results-modal {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 24px; padding: 44px 40px;
+  max-width: 520px; width: 100%; text-align: center;
+  transform: scale(0.9) translateY(20px);
+  transition: transform 0.5s cubic-bezier(0.34,1.4,0.64,1);
+  position: relative; overflow: hidden;
+}
+.results-overlay.show .results-modal { transform: scale(1) translateY(0); }
+
+.results-modal::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent3), var(--accent4));
+}
+
+/* Particles canvas inside modal */
+#modal-canvas {
+  position: absolute; inset: 0; pointer-events: none; border-radius: 24px;
+}
+
+.result-tag {
+  font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+}
+.result-headline {
+  font-family: 'Orbitron', monospace; font-size: 26px; font-weight: 900;
+  margin-bottom: 32px; line-height: 1.2;
+  background: linear-gradient(135deg, var(--accent), var(--accent3));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.result-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
+.result-item {
+  background: var(--surface); border-radius: 12px; padding: 18px 10px;
+  border: 1px solid var(--border2);
+}
+.result-item .big {
+  font-family: 'Orbitron', monospace; font-size: 34px; font-weight: 900; line-height: 1; margin-bottom: 6px;
+}
+.result-item:nth-child(1) .big { background: linear-gradient(135deg, var(--accent),var(--accent3)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.result-item:nth-child(2) .big { color: var(--accent3); }
+.result-item:nth-child(3) .big { color: var(--accent2); }
+.result-item .lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+
+.result-grade {
+  font-family: 'Orbitron', monospace; font-size: 13px; font-weight: 700;
+  color: var(--accent4); margin-bottom: 10px;
+}
+.result-tip { font-size: 13px; color: var(--muted); line-height: 1.7; margin-bottom: 28px; }
+.result-tip strong { color: var(--text); }
+
+.result-btns { display: flex; gap: 12px; justify-content: center; }
+
+/* ── TIPS ──────────────────────────────────── */
+.tips-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 28px; opacity: 0; }
+.tip-card {
+  background: var(--card); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 18px;
+  transition: border-color 0.25s, transform 0.25s;
+}
+.tip-card:hover { border-color: var(--border); transform: translateY(-3px); }
+.tip-icon { font-size: 22px; margin-bottom: 8px; }
+.tip-title { font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 1px; margin-bottom: 6px; color: var(--text); }
+.tip-text  { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+/* ── TOAST ─────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 28px; left: 50%;
+  transform: translateX(-50%) translateY(60px);
+  background: var(--card); border: 1px solid var(--border);
+  color: var(--text); padding: 11px 22px; border-radius: 40px;
+  font-size: 12px; z-index: 600;
+  transition: transform 0.35s cubic-bezier(0.34,1.3,0.64,1);
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4); white-space: nowrap;
+  font-family: 'Orbitron', monospace; letter-spacing: 1px;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+/* Number pop */
+.pop { animation: numPop 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+@keyframes numPop { 0%{transform:scale(1.4)} 100%{transform:scale(1)} }
+
+/* Particle burst */
+.particle {
+  position: fixed; pointer-events: none; z-index: 9999;
+  width: 6px; height: 6px; border-radius: 50%;
+}
+
+@media (max-width: 640px) {
+  .stats-bar { grid-template-columns: repeat(2,1fr); }
+  .tips-row  { grid-template-columns: 1fr; }
+  .result-grid { grid-template-columns: 1fr; }
+  .keyboard-wrap { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Custom cursor -->
+<div id="cursor-dot"></div>
+<div id="cursor-ring"></div>
+
+<!-- Three.js background -->
+<canvas id="bg-canvas"></canvas>
+
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <header id="header">
+    <div class="logo-wrap">
+      <div class="logo">TYPE<span style="opacity:0.5">⟨</span>FORGE<span style="opacity:0.5">⟩</span></div>
+      <div class="logo-sub">3D Speed Analyzer · v3.0</div>
+    </div>
+    <div class="header-badge">POWERED BY GSAP + THREE.JS</div>
+  </header>
+
+  <!-- STATS -->
+  <div class="stats-bar" id="stats-bar">
+    <div class="stat-card">
+      <div class="stat-icon">⚡</div>
+      <div class="stat-label">Speed</div>
+      <div class="stat-value" id="live-wpm">0</div>
+      <div class="stat-unit">WPM</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">🎯</div>
+      <div class="stat-label">Accuracy</div>
+      <div class="stat-value" id="live-acc">100</div>
+      <div class="stat-unit">%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">⏱️</div>
+      <div class="stat-label">Streak</div>
+      <div class="stat-value" id="live-streak">0</div>
+      <div class="stat-unit">correct</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">❌</div>
+      <div class="stat-label">Errors</div>
+      <div class="stat-value" id="live-err">0</div>
+      <div class="stat-unit">keystrokes</div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls-row" id="controls-row">
+    <div class="ctrl-group">
+      <div class="ctrl-label">Difficulty</div>
+      <div class="btn-group">
+        <button class="pill active" data-diff="easy"   onclick="setDifficulty(this)"><span>Easy</span></button>
+        <button class="pill"        data-diff="medium" onclick="setDifficulty(this)"><span>Medium</span></button>
+        <button class="pill"        data-diff="hard"   onclick="setDifficulty(this)"><span>Hard</span></button>
+        <button class="pill"        data-diff="pro"    onclick="setDifficulty(this)"><span>Pro</span></button>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Duration</div>
+      <div class="btn-group">
+        <button class="pill"        data-time="30"  onclick="setTime(this)"><span>30s</span></button>
+        <button class="pill active" data-time="60"  onclick="setTime(this)"><span>60s</span></button>
+        <button class="pill"        data-time="120" onclick="setTime(this)"><span>2min</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMER -->
+  <div class="timer-row" id="timer-row">
+    <div class="timer-3d-wrap">
+      <svg class="timer-svg" width="110" height="110" viewBox="0 0 110 110">
+        <circle class="timer-track" cx="55" cy="55" r="45"/>
+        <circle class="timer-prog" id="timer-prog" cx="55" cy="55" r="45"
+          stroke="url(#timerGrad)"/>
+        <defs>
+          <linearGradient id="timerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="#6378ff"/>
+            <stop offset="100%" stop-color="#63ffda"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="timer-inner">
+        <div class="timer-num" id="timer-display">60</div>
+        <div class="timer-sec">SEC</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEST AREA -->
+  <div class="test-container" id="test-container">
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+    <div class="text-display" id="text-display"></div>
+    <div class="overlay-msg" id="overlay" onclick="startTest()">
+      <div class="overlay-icon">⌨️</div>
+      <div class="overlay-hint">Click to Start Typing</div>
+      <div class="overlay-sub">Timer begins on first keystroke</div>
+    </div>
+  </div>
+
+  <!-- INPUT -->
+  <div class="input-wrap" id="input-wrap">
+    <input type="text" id="typing-input"
+      placeholder="Start typing here…"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      oninput="handleInput(event)"
+      onkeydown="handleKey(event)"
+      onfocus="onFocus()" onblur="onBlur()"
+      disabled/>
+    <div class="input-footer">
+      <span>Focus input · Timer auto-starts · <kbd>Tab</kbd> to restart</span>
+      <span id="char-counter" style="font-family:'Orbitron',monospace;font-size:10px">0 / 0</span>
+    </div>
+  </div>
+
+  <!-- MISTAKE LOG -->
+  <div class="mistake-log" id="mistake-log">
+    <div class="mistake-log-title">MISTAKE TRACKER</div>
+    <div class="mistake-chips" id="mistake-chips"></div>
+  </div>
+
+  <!-- BUTTONS -->
+  <div class="btn-row" id="btn-row">
+    <button class="btn btn-primary"   onclick="restartTest()">↺ <span>Restart</span></button>
+    <button class="btn btn-secondary" onclick="newTest()">⇌ <span>New Text</span></button>
+  </div>
+
+  <!-- KEYBOARD -->
+  <div class="keyboard-section" id="keyboard-section">
+    <div class="section-title">Live Keyboard</div>
+    <div class="keyboard-wrap" id="keyboard"></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="history-section" id="history-section">
+    <div class="section-title">Session History</div>
+    <div class="history-list" id="history-list">
+      <div class="empty-history">Complete a test to see your results</div>
+    </div>
+  </div>
+
+  <!-- TIPS -->
+  <div class="tips-row" id="tips-row">
+    <div class="tip-card">
+      <div class="tip-icon">🎯</div>
+      <div class="tip-title">Accuracy First</div>
+      <div class="tip-text">Focus on precision before speed. 95%+ accuracy is the foundation of elite typing.</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-icon">🏠</div>
+      <div class="tip-title">Home Row</div>
+      <div class="tip-text">Keep fingers on ASDF JKL; and return after every stroke. This single habit drives the most gains.</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-icon">👁️</div>
+      <div class="tip-title">Eyes Up</div>
+      <div class="tip-text">Train without looking at the keyboard. Muscle memory builds fast — trust the process.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- RESULTS MODAL -->
+<div class="results-overlay" id="results-overlay">
+  <canvas id="modal-canvas"></canvas>
+  <div class="results-modal" id="results-modal">
+    <div class="result-tag">Test Complete</div>
+    <div class="result-headline" id="result-headline">0 WPM</div>
+    <div class="result-grid">
+      <div class="result-item"><div class="big" id="res-wpm">0</div><div class="lbl">WPM</div></div>
+      <div class="result-item"><div class="big" id="res-acc">0%</div><div class="lbl">Accuracy</div></div>
+      <div class="result-item"><div class="big" id="res-err">0</div><div class="lbl">Errors</div></div>
+    </div>
+    <div class="result-grade" id="res-grade">—</div>
+    <div class="result-tip"  id="res-tip"></div>
+    <div class="result-btns">
+      <button class="btn btn-primary"   onclick="closeResults();restartTest()">↺ <span>Try Again</span></button>
+      <button class="btn btn-secondary" onclick="closeResults();newTest()">⇌ <span>New Text</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<script>
+gsap.registerPlugin(TextPlugin);
+
+/* ─── WORD BANKS ──────────────────────────────────────────── */
+const wordBanks = {
+  easy:   ['the','be','to','of','and','a','in','that','have','it','for','not','on','with','he','as','you','do','at','this','but','his','by','from','they','we','say','her','she','or','an','will','my','one','all','would','there','their','what','so','up','out','if','about','who','get','which','go','me','when','make','can','like','time','no','just','him','know','take','people','into','year','your','good','some','could','them','see','other','than','then','now','look','only','come','its','over','think','also','back','after','use','two','how','our','work','first','well','way','even','new','want','because','any','these','give','day','most','us'],
+  medium: ['about','action','actually','again','against','almost','alone','already','although','always','another','answer','around','article','before','between','business','certain','change','choose','common','country','create','decide','different','during','enough','example','expect','experience','explain','feature','finally','follow','forward','general','getting','global','happen','having','health','history','however','important','include','inside','instead','interest','knowledge','language','largely','later','learn','living','looking','making','manage','market','meaning','minute','moment','morning','moving','natural','nothing','number','often','outside','patient','perhaps','place','point','possible','present','problem','process','program','provide','question','quickly','reason','receive','recent','remain','result','return','review','school','second','should','simple','social','special','start','still','story','strong','student','system','things','thought','through','together','toward','until','usually','value','various','voice','whether','within','without'],
+  hard:   ['accomplish','acknowledge','additional','administration','advantageous','ambiguous','approximately','architecture','autonomous','breakthrough','bureaucratic','circumstances','collaboration','complicated','comprehensive','conceptual','consequently','controversial','coordination','cryptography','deliberately','dependency','deterioration','development','documentation','dramatically','eligibility','entrepreneur','environmental','equilibrium','establishment','evolutionary','exceptional','functionality','hypothetically','identification','implementation','infrastructure','intelligence','interchangeable','international','interpretation','investigation','jurisdiction','knowledgeable','manufacturing','metropolitan','multidimensional','nevertheless','notification','occasionally','optimization','organization','overwhelming','particularly','phenomenon','philosophical','predominantly','prioritization','productivity','progressively','psychological','qualification','recommendation','reconciliation','reorganization','responsibility','retrospective','simultaneously','specification','substantially','supplementary','systematically','technological','telecommunication','transformation','transparency','unprecedented','unpredictable','vulnerability'],
+  pro:    ['abstraction','acknowledgment','aforementioned','agglomeration','algorithmic','anachronistic','anthropomorphic','approximation','authentication','authorization','bibliographical','bureaucratically','cardiovascular','classification','coevolutionary','commemoration','commensurable','complementary','comprehensible','concentration','configuration','consequential','constitutional','contextualizing','counterintuitive','crystallization','decomposition','deontological','differentiation','disambiguation','disenfranchised','documentation','electromagnetic','epistemological','extrapolation','fundamentalism','heterogeneous','hierarchically','hypothetically','identification','implementation','incomprehensible','indistinguishable','infrastructure','instantaneous','interoperability','juxtaposition','manifestation','metamorphosis','methodological','multifaceted','nondeterministic','obfuscation','phenomenological','physiological','probabilistic','procrastination','quantification','rationalization','reconfiguration','retrospective','revolutionary','simultaneously','sophisticated','specification','standardization','stratification','subconsciously','synchronization','systematically','technological','thermodynamic','transformation','unconditional','underrepresented','unprecedented','virtualization','vulnerability']
+};
+
+/* ─── STATE ───────────────────────────────────────────────── */
+let diff='easy', duration=60, timeLeft=60;
+let testWords=[], charEls=[], currentIndex=0;
+let correctChars=0, wrongChars=0, totalTyped=0, streak=0, maxStreak=0;
+let timerInterval=null, started=false, finished=false;
+let history=[], likedIds=new Set();
+let mistakeMap={};   // char → {expected, typed}[]
+let mistakePositions=new Set();
+
+/* ─── THREE.JS BACKGROUND ─────────────────────────────────── */
+(function initThree(){
+  const canvas = document.getElementById('bg-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.z = 30;
+
+  /* Floating keyboard keys (cubes) */
+  const keyGeo  = new THREE.BoxGeometry(1, 0.15, 1);
+  const keys    = [];
+  const colors  = [0x6378ff, 0x63ffda, 0xff6b6b, 0xffd166, 0x8a6bff];
+
+  for(let i=0; i<80; i++){
+    const mat = new THREE.MeshPhongMaterial({
+      color: colors[i % colors.length],
+      transparent: true, opacity: 0.12 + Math.random()*0.1,
+      shininess: 80
+    });
+    const mesh = new THREE.Mesh(keyGeo, mat);
+    mesh.position.set(
+      (Math.random()-0.5)*60,
+      (Math.random()-0.5)*40,
+      (Math.random()-0.5)*20 - 10
+    );
+    mesh.rotation.set(
+      Math.random()*Math.PI,
+      Math.random()*Math.PI,
+      Math.random()*Math.PI
+    );
+    mesh.userData = {
+      vx: (Math.random()-0.5)*0.008,
+      vy: (Math.random()-0.5)*0.008,
+      rx: (Math.random()-0.5)*0.005,
+      ry: (Math.random()-0.5)*0.005
+    };
+    scene.add(mesh);
+    keys.push(mesh);
+  }
+
+  /* Torus knot centerpiece */
+  const torusGeo = new THREE.TorusKnotGeometry(6, 1.2, 120, 18);
+  const torusMat = new THREE.MeshPhongMaterial({
+    color: 0x6378ff, wireframe: true,
+    transparent: true, opacity: 0.06
+  });
+  const torus = new THREE.Mesh(torusGeo, torusMat);
+  torus.position.set(0, 0, -15);
+  scene.add(torus);
+
+  /* Particle field */
+  const partGeo = new THREE.BufferGeometry();
+  const partCount = 400;
+  const positions = new Float32Array(partCount * 3);
+  for(let i=0; i<partCount*3; i++) positions[i] = (Math.random()-0.5)*80;
+  partGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const partMat = new THREE.PointsMaterial({
+    color: 0x6378ff, size: 0.12,
+    transparent: true, opacity: 0.35
+  });
+  scene.add(new THREE.Points(partGeo, partMat));
+
+  /* Lights */
+  scene.add(new THREE.AmbientLight(0x6378ff, 0.4));
+  const pt = new THREE.PointLight(0x63ffda, 1.2, 80);
+  pt.position.set(10, 10, 10);
+  scene.add(pt);
+  const pt2 = new THREE.PointLight(0xff6b6b, 0.8, 60);
+  pt2.position.set(-15, -10, 5);
+  scene.add(pt2);
+
+  let mouseX=0, mouseY=0;
+  document.addEventListener('mousemove', e => {
+    mouseX = (e.clientX/window.innerWidth - 0.5)*2;
+    mouseY = (e.clientY/window.innerHeight - 0.5)*2;
+  });
+
+  let typingIntensity = 0;
+  window.setTypingIntensity = (v) => { typingIntensity = v; };
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const t = Date.now() * 0.001;
+
+    camera.position.x += (mouseX * 3 - camera.position.x) * 0.03;
+    camera.position.y += (-mouseY * 2 - camera.position.y) * 0.03;
+    camera.lookAt(scene.position);
+
+    torus.rotation.x = t * 0.1;
+    torus.rotation.y = t * 0.15;
+    const scale = 1 + typingIntensity * 0.3;
+    torus.scale.setScalar(scale);
+    torusMat.opacity = 0.05 + typingIntensity * 0.08;
+
+    keys.forEach(k => {
+      k.position.x += k.userData.vx * (1 + typingIntensity);
+      k.position.y += k.userData.vy * (1 + typingIntensity);
+      k.rotation.x += k.userData.rx;
+      k.rotation.y += k.userData.ry;
+      if(Math.abs(k.position.x) > 35) k.userData.vx *= -1;
+      if(Math.abs(k.position.y) > 25) k.userData.vy *= -1;
+    });
+
+    pt.position.x = Math.sin(t*0.5)*15;
+    pt.position.y = Math.cos(t*0.3)*10;
+    typingIntensity *= 0.92;
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  });
+})();
+
+/* ─── MODAL CONFETTI CANVAS ───────────────────────────────── */
+let confettiParticles = [];
+let confettiCtx = null;
+let confettiAnim = null;
+
+function initConfetti(wpm){
+  const canvas = document.getElementById('modal-canvas');
+  const modal  = document.getElementById('results-modal');
+  canvas.width  = modal.offsetWidth;
+  canvas.height = modal.offsetHeight;
+  confettiCtx = canvas.getContext('2d');
+  confettiParticles = [];
+
+  const colors = ['#6378ff','#63ffda','#ffd166','#ff6b6b','#8a6bff'];
+  const count  = Math.min(80, wpm);
+  for(let i=0; i<count; i++){
+    confettiParticles.push({
+      x: canvas.width * Math.random(),
+      y: -10,
+      vx: (Math.random()-0.5)*3,
+      vy: 1 + Math.random()*3,
+      r: 3 + Math.random()*4,
+      color: colors[i % colors.length],
+      rot: Math.random()*360,
+      rv: (Math.random()-0.5)*8
+    });
+  }
+  animateConfetti();
+}
+
+function animateConfetti(){
+  if(!confettiCtx) return;
+  const canvas = document.getElementById('modal-canvas');
+  confettiCtx.clearRect(0,0,canvas.width,canvas.height);
+  confettiParticles = confettiParticles.filter(p => p.y < canvas.height + 20);
+  confettiParticles.forEach(p => {
+    p.x  += p.vx; p.y += p.vy; p.rot += p.rv;
+    confettiCtx.save();
+    confettiCtx.translate(p.x, p.y);
+    confettiCtx.rotate(p.rot * Math.PI/180);
+    confettiCtx.fillStyle = p.color;
+    confettiCtx.globalAlpha = 0.8;
+    confettiCtx.fillRect(-p.r, -p.r/2, p.r*2, p.r);
+    confettiCtx.restore();
+  });
+  if(confettiParticles.length > 0) confettiAnim = requestAnimationFrame(animateConfetti);
+}
+
+/* ─── CUSTOM CURSOR ───────────────────────────────────────── */
+const dot  = document.getElementById('cursor-dot');
+const ring = document.getElementById('cursor-ring');
+let mx=0, my=0, rx=0, ry=0;
+
+document.addEventListener('mousemove', e => {
+  mx = e.clientX; my = e.clientY;
+  dot.style.left = mx+'px'; dot.style.top = my+'px';
+});
+(function cursorLoop(){
+  rx += (mx - rx) * 0.12;
+  ry += (my - ry) * 0.12;
+  ring.style.left = rx+'px'; ring.style.top = ry+'px';
+  requestAnimationFrame(cursorLoop);
+})();
+
+/* ─── KEYBOARD ────────────────────────────────────────────── */
+const kbRows = [
+  ['`','1','2','3','4','5','6','7','8','9','0','-','='],
+  ['Q','W','E','R','T','Y','U','I','O','P','[',']'],
+  ['A','S','D','F','G','H','J','K','L',';',"'"],
+  ['Z','X','C','V','B','N','M',',','.','/']
+];
+
+function buildKeyboard(){
+  const kb = document.getElementById('keyboard');
+  kb.innerHTML = '';
+  kbRows.forEach((row, ri) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'key-row';
+    row.forEach(k => {
+      const el = document.createElement('div');
+      el.className = 'key';
+      el.textContent = k;
+      el.id = 'k-' + k.toLowerCase();
+      rowEl.appendChild(el);
+    });
+    kb.appendChild(rowEl);
+  });
+  // Space bar
+  const spRow = document.createElement('div');
+  spRow.className = 'key-row';
+  spRow.style.marginTop = '4px';
+  const sp = document.createElement('div');
+  sp.className = 'key space-key'; sp.textContent = 'SPACE'; sp.id = 'k- ';
+  spRow.appendChild(sp); kb.appendChild(spRow);
+}
+
+function flashKey(char, correct){
+  const id = 'k-' + char.toLowerCase();
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.remove('correct-key','wrong-key','pressed');
+  el.classList.add(correct ? 'correct-key' : 'wrong-key');
+  // GSAP scale bounce
+  gsap.fromTo(el, { scale: correct ? 1.3 : 1.2 }, { scale: 1, duration: 0.25, ease: 'elastic.out(1,0.5)' });
+  setTimeout(() => el.classList.remove('correct-key','wrong-key'), 350);
+}
+
+/* ─── TEXT GENERATION ─────────────────────────────────────── */
+function generateText(){
+  const bank = wordBanks[diff];
+  const words = [];
+  for(let i=0; i<55; i++) words.push(bank[Math.floor(Math.random()*bank.length)]);
+  return words;
+}
+
+function renderText(){
+  const display = document.getElementById('text-display');
+  display.innerHTML = ''; charEls = [];
+  testWords.forEach((word, wi) => {
+    word.split('').forEach((ch, ci) => {
+      const span = document.createElement('span');
+      span.className = 'char pending';
+      span.textContent = ch;
+      display.appendChild(span);
+      charEls.push(span);
+    });
+    if(wi < testWords.length-1){
+      const sp = document.createElement('span');
+      sp.className = 'char pending'; sp.textContent = ' ';
+      display.appendChild(sp); charEls.push(sp);
+    }
+  });
+  updateCursor();
+  updateCharCounter();
+}
+
+function updateCursor(){
+  charEls.forEach((el,i) => {
+    el.classList.remove('current');
+    if(i === currentIndex) el.classList.add('current');
+  });
+}
+
+function updateCharCounter(){
+  document.getElementById('char-counter').textContent = `${currentIndex} / ${charEls.length}`;
+}
+
+/* ─── TEST FLOW ───────────────────────────────────────────── */
+function resetState(){
+  clearInterval(timerInterval);
+  started=false; finished=false;
+  currentIndex=0; correctChars=0; wrongChars=0; totalTyped=0;
+  streak=0; maxStreak=0; mistakeMap={}; mistakePositions=new Set();
+  timeLeft=duration;
+  updateTimerDisplay(); updateTimerRing(1);
+  updateStatsUI(0,100,0,0);
+  document.getElementById('prog-fill').style.width='0%';
+  document.getElementById('mistake-log').style.display='none';
+  document.getElementById('mistake-chips').innerHTML='';
+}
+
+function newTest(){
+  resetState();
+  testWords = generateText();
+  renderText();
+  document.getElementById('typing-input').value='';
+  document.getElementById('typing-input').disabled=false;
+  document.getElementById('overlay').style.display='flex';
+  document.getElementById('test-container').classList.remove('focused','error-shake');
+  document.body.classList.remove('typing','error');
+}
+
+function startTest(){
+  if(started||finished) return;
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('test-container').classList.add('focused');
+  document.getElementById('typing-input').disabled=false;
+  document.getElementById('typing-input').focus();
+  started=true;
+  document.body.classList.add('typing');
+
+  // GSAP timer start pulse
+  gsap.fromTo('#timer-row', { scale: 1.12 }, { scale: 1, duration: 0.5, ease: 'elastic.out(1,0.5)' });
+
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateTimerDisplay();
+    updateTimerRing(timeLeft/duration);
+    if(timeLeft<=10){
+      // Urgent shake on timer
+      gsap.to('#timer-row', { x: 3, duration: 0.07, yoyo: true, repeat: 3, ease: 'none', onComplete:()=>gsap.set('#timer-row',{x:0}) });
+    }
+    if(timeLeft<=0) endTest();
+  }, 1000);
+}
+
+function endTest(){
+  clearInterval(timerInterval); finished=true; started=false;
+  document.getElementById('typing-input').disabled=true;
+  document.getElementById('test-container').classList.remove('focused');
+  charEls.forEach(el=>el.classList.remove('current'));
+  document.body.classList.remove('typing','error');
+
+  const elapsed = duration - timeLeft;
+  const wpm = elapsed>0 ? Math.round((correctChars/5)/(elapsed/60)) : 0;
+  const acc  = totalTyped>0 ? Math.round((correctChars/totalTyped)*100) : 100;
+
+  // GSAP end animation
+  gsap.to('#test-container', { borderColor: 'rgba(99,255,218,0.5)', boxShadow:'0 0 40px rgba(99,255,218,0.15)', duration:0.6, yoyo:true, repeat:1 });
+
+  addHistory(wpm, acc, wrongChars, diff, duration);
+  setTimeout(()=>showResults(wpm,acc,wrongChars), 400);
+}
+
+function restartTest(){
+  closeResults();
+  resetState();
+  renderText();
+  document.getElementById('typing-input').value='';
+  document.getElementById('typing-input').disabled=false;
+  document.getElementById('overlay').style.display='flex';
+  document.getElementById('test-container').classList.remove('focused','error-shake');
+}
+
+/* ─── INPUT HANDLER ───────────────────────────────────────── */
+function handleInput(e){
+  if(finished) return;
+  if(!started) startTest();
+
+  const input  = e.target;
+  const typed  = input.value;
+  if(!typed.length) return;
+
+  const ch       = typed[typed.length-1];
+  const expected = charEls[currentIndex]?.textContent;
+  if(!expected) return;
+
+  totalTyped++;
+  window.setTypingIntensity && window.setTypingIntensity(1);
+
+  if(ch === expected){
+    charEls[currentIndex].classList.remove('wrong','pending');
+    charEls[currentIndex].classList.add('correct');
+
+    // GSAP correct char pop
+    gsap.fromTo(charEls[currentIndex],
+      { scale: 1.4, color: '#63ffda' },
+      { scale: 1, color: '', duration: 0.25, ease: 'elastic.out(1.2,0.5)' }
+    );
+
+    correctChars++; streak++;
+    if(streak > maxStreak) maxStreak = streak;
+
+    // Streak milestones
+    if(streak > 0 && streak % 10 === 0){
+      showToast(`🔥 ${streak} streak!`);
+      burstParticles(e.target);
+    }
+
+    flashKey(ch, true);
+    mistakePositions.delete(currentIndex);
+    currentIndex++;
+    document.body.classList.remove('error');
+    document.body.classList.add('typing');
+  } else {
+    // Wrong character
+    streak = 0;
+    if(!charEls[currentIndex].classList.contains('wrong')){
+      charEls[currentIndex].classList.add('wrong');
+      charEls[currentIndex].classList.remove('pending');
+      wrongChars++;
+      logMistake(currentIndex, expected, ch);
+    }
+
+    flashKey(ch, false);
+    document.body.classList.add('error');
+
+    // GSAP shake on container
+    gsap.to('#test-container', {
+      x: [-5,5,-4,4,-2,2,0], duration: 0.35, ease: 'none'
+    });
+
+    // Wrong char animation
+    gsap.fromTo(charEls[currentIndex],
+      { scale: 1.3, rotation: -8 },
+      { scale: 1, rotation: 0, duration: 0.3, ease: 'elastic.out(1,0.5)' }
+    );
+
+    // Show tooltip
+    showMistakeTooltip(charEls[currentIndex], expected, ch);
+
+    input.value = typed.slice(0,-1);
+    return;
+  }
+
+  input.value = '';
+  updateCursor();
+  updateCharCounter();
+
+  // Progress
+  const prog = Math.round((currentIndex/charEls.length)*100);
+  document.getElementById('prog-fill').style.width = prog+'%';
+
+  // Stats
+  const elapsed = duration - timeLeft;
+  const wpm = elapsed>0 ? Math.round((correctChars/5)/(elapsed/60)) : 0;
+  const acc  = totalTyped>0 ? Math.round((correctChars/totalTyped)*100) : 100;
+  updateStatsUI(wpm, acc, streak, wrongChars);
+
+  if(currentIndex >= charEls.length) endTest();
+}
+
+function handleKey(e){
+  if(e.key==='Tab'){ e.preventDefault(); restartTest(); }
+  if(e.key==='Escape'){ closeResults(); }
+}
+
+function onFocus(){
+  if(!started&&!finished){
+    document.getElementById('test-container').classList.add('focused');
+    gsap.to('#test-container', { borderColor:'rgba(99,120,255,0.4)', duration:0.3 });
+  }
+}
+function onBlur(){
+  if(!started) document.getElementById('test-container').classList.remove('focused');
+}
+
+/* ─── MISTAKE SYSTEM ──────────────────────────────────────── */
+function logMistake(idx, expected, typed){
+  const key = expected;
+  if(!mistakeMap[key]) mistakeMap[key] = [];
+  mistakeMap[key].push({ idx, typed });
+  mistakePositions.add(idx);
+  renderMistakeLog();
+}
+
+function renderMistakeLog(){
+  const log   = document.getElementById('mistake-log');
+  const chips = document.getElementById('mistake-chips');
+  if(Object.keys(mistakeMap).length === 0){ log.style.display='none'; return; }
+
+  log.style.display = 'block';
+  if(log.style.opacity === '0' || !log.style.opacity){
+    gsap.fromTo(log, {opacity:0,y:10},{opacity:1,y:0,duration:0.4});
+  }
+
+  chips.innerHTML = Object.entries(mistakeMap).map(([expected, arr]) => {
+    const count = arr.length;
+    const examples = [...new Set(arr.map(e=>e.typed))].slice(0,2).join(', ');
+    return `<div class="mistake-chip">
+      <span class="expected">${expected === ' ' ? '⎵' : expected}</span>
+      <span style="color:var(--muted)">→</span>
+      <span class="typed-wrong">${examples || '?'}</span>
+      ${count > 1 ? `<span style="color:var(--muted);font-size:9px">×${count}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function showMistakeTooltip(el, expected, typed){
+  // Remove old tooltips
+  document.querySelectorAll('.mistake-tooltip').forEach(t=>t.remove());
+  const tip = document.createElement('div');
+  tip.className = 'mistake-tooltip';
+  tip.textContent = `Expected "${expected === ' ' ? 'space' : expected}", typed "${typed}"`;
+  el.style.position = 'relative';
+  el.appendChild(tip);
+  setTimeout(()=>tip.remove(), 1900);
+}
+
+/* ─── PARTICLES ───────────────────────────────────────────── */
+function burstParticles(origin){
+  const rect = origin.getBoundingClientRect();
+  const cx = rect.left + rect.width/2;
+  const cy = rect.top  + rect.height/2;
+  const colors = ['#6378ff','#63ffda','#ffd166','#ff6b6b'];
+  for(let i=0; i<12; i++){
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.cssText = `left:${cx}px;top:${cy}px;background:${colors[i%colors.length]};position:fixed;`;
+    document.body.appendChild(p);
+    gsap.to(p, {
+      x: (Math.random()-0.5)*120,
+      y: (Math.random()-0.5)*120,
+      opacity: 0, scale: 0,
+      duration: 0.7 + Math.random()*0.4,
+      ease: 'power3.out',
+      onComplete: ()=>p.remove()
+    });
+  }
+}
+
+/* ─── TIMER UI ────────────────────────────────────────────── */
+function updateTimerDisplay(){
+  const m = Math.floor(timeLeft/60);
+  const s = timeLeft%60;
+  const txt = m>0 ? `${m}:${s.toString().padStart(2,'0')}` : s;
+  const el = document.getElementById('timer-display');
+
+  gsap.fromTo(el, {scale:1.15}, {scale:1, duration:0.2, ease:'back.out(2)'});
+  el.textContent = txt;
+
+  const prog = document.getElementById('timer-prog');
+  if(timeLeft<=10)      prog.style.stroke='#ff4f6e';
+  else if(timeLeft<=20) prog.style.stroke='#ffd166';
+  else                  prog.style.stroke='url(#timerGrad)';
+}
+
+function updateTimerRing(ratio){
+  const circ = 283;
+  const el = document.getElementById('timer-prog');
+  gsap.to(el, { strokeDashoffset: circ*(1-ratio), duration: 0.9, ease: 'power2.out' });
+}
+
+/* ─── STATS UI ────────────────────────────────────────────── */
+function updateStatsUI(wpm, acc, str, err){
+  animNum('live-wpm', wpm);
+  animNum('live-acc', acc);
+  animNum('live-streak', str);
+  animNum('live-err', err);
+}
+
+function animNum(id, val){
+  const el = document.getElementById(id);
+  const cur = parseInt(el.textContent)||0;
+  if(cur===val) return;
+  gsap.to({n:cur}, {
+    n: val, duration:0.4, ease:'power2.out',
+    onUpdate: function(){ el.textContent = Math.round(this.targets()[0].n); }
+  });
+}
+
+/* ─── RESULTS ─────────────────────────────────────────────── */
+function getGrade(wpm, acc){
+  if(wpm>=100&&acc>=97) return {g:'🏆 ELITE',   t:`Extraordinary! You're in the top 1% of typists worldwide. Truly elite performance.`};
+  if(wpm>=80 &&acc>=95) return {g:'⭐ EXPERT',   t:`Outstanding! You outpace 90% of typists. Push for 100 WPM on Pro difficulty.`};
+  if(wpm>=60 &&acc>=93) return {g:'🚀 ADVANCED', t:`Great speed! Reduce errors to boost net WPM. Challenge yourself with Hard mode.`};
+  if(wpm>=40 &&acc>=90) return {g:'📈 SOLID',    t:`Above average! Daily 15-minute practice will get you to 60+ WPM quickly.`};
+  if(wpm>=25)           return {g:'🌱 GROWING',  t:`Good start! Prioritize accuracy first — slow down and aim for 95%+ consistently.`};
+  return                       {g:'🔰 BEGINNER', t:`Keep going! Learn home-row technique and avoid looking at the keyboard.`};
+}
+
+function showResults(wpm, acc, err){
+  const {g,t} = getGrade(wpm, acc);
+  document.getElementById('result-headline').textContent = `${wpm} WPM`;
+  document.getElementById('res-wpm').textContent  = wpm;
+  document.getElementById('res-acc').textContent  = acc+'%';
+  document.getElementById('res-err').textContent  = err;
+  document.getElementById('res-grade').textContent = g;
+  document.getElementById('res-tip').textContent   = t;
+
+  const overlay = document.getElementById('results-overlay');
+  overlay.classList.add('show');
+
+  // GSAP entrance
+  gsap.fromTo('#results-modal .result-grid .result-item',
+    { y: 30, opacity: 0 },
+    { y: 0, opacity: 1, duration: 0.5, stagger: 0.12, delay: 0.3, ease: 'back.out(1.5)' }
+  );
+
+  // Confetti
+  setTimeout(()=>initConfetti(wpm), 200);
+
+  // Big number count-up
+  gsap.from({ n: 0 }, {
+    n: wpm, duration: 1.2, ease: 'power3.out', delay: 0.2,
+    onUpdate: function(){
+      document.getElementById('res-wpm').textContent = Math.round(this.targets()[0].n);
+    }
+  });
+}
+
+function closeResults(){
+  document.getElementById('results-overlay').classList.remove('show');
+  if(confettiAnim) cancelAnimationFrame(confettiAnim);
+}
+
+document.getElementById('results-overlay').addEventListener('click', function(e){
+  if(e.target===this) closeResults();
+});
+
+/* ─── HISTORY ─────────────────────────────────────────────── */
+function addHistory(wpm,acc,err,d,dur){
+  history.unshift({wpm,acc,err,diff:d,dur});
+  if(history.length>10) history.pop();
+  renderHistory();
+}
+function renderHistory(){
+  const list = document.getElementById('history-list');
+  if(!history.length){
+    list.innerHTML='<div class="empty-history">Complete a test to see your results</div>';
+    return;
+  }
+  const maxWpm = Math.max(...history.map(h=>h.wpm));
+  list.innerHTML = history.map((h,i)=>`
+    <div class="history-item" style="animation-delay:${i*0.06}s">
+      <span class="h-rank">#${i+1}</span>
+      <span class="h-wpm">${h.wpm}</span>
+      <div class="h-bar"><div class="h-bar-fill" style="width:${maxWpm?Math.round((h.wpm/maxWpm)*100):0}%"></div></div>
+      <span class="h-acc">${h.acc}%</span>
+      <span class="h-err" title="errors">⚡${h.err}</span>
+      <span class="h-diff">${h.diff.toUpperCase()}</span>
+      <span class="h-time">${h.dur}s</span>
+    </div>`).join('');
+}
+
+/* ─── SETTINGS ────────────────────────────────────────────── */
+function setDifficulty(btn){
+  document.querySelectorAll('[data-diff]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  diff = btn.dataset.diff;
+  gsap.fromTo(btn, {scale:0.85},{scale:1,duration:0.4,ease:'elastic.out(1.2,0.5)'});
+  if(!started) newTest();
+}
+function setTime(btn){
+  document.querySelectorAll('[data-time]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  duration = parseInt(btn.dataset.time);
+  timeLeft  = duration;
+  gsap.fromTo(btn, {scale:0.85},{scale:1,duration:0.4,ease:'elastic.out(1.2,0.5)'});
+  if(!started){ resetState(); if(testWords.length) renderText(); }
+}
+
+/* ─── TOAST ───────────────────────────────────────────────── */
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+/* ─── ENTRANCE ANIMATIONS ─────────────────────────────────── */
+function runIntro(){
+  const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+  tl.to('#header',          { opacity:1, y:0, duration:0.7, from:{y:-20} })
+    .to('#stats-bar',        { opacity:1, y:0, duration:0.6, from:{y:20}, stagger:0.08 }, '-=0.3')
+    .to('#controls-row',     { opacity:1, duration:0.5 }, '-=0.2')
+    .to('#timer-row',        { opacity:1, scale:1, duration:0.6, ease:'back.out(1.8)', from:{scale:0.7} }, '-=0.2')
+    .to('#test-container',   { opacity:1, y:0, duration:0.5, from:{y:16} }, '-=0.2')
+    .to('#input-wrap',       { opacity:1, duration:0.4 }, '-=0.1')
+    .to('#btn-row',          { opacity:1, duration:0.4 }, '-=0.1')
+    .to('#keyboard-section', { opacity:1, duration:0.5 }, '-=0.1')
+    .to('#history-section',  { opacity:1, duration:0.5 }, '-=0.1')
+    .to('#tips-row',         { opacity:1, y:0, duration:0.5, stagger:0.1, from:{y:12} }, '-=0.1');
+
+  // Stat cards stagger
+  gsap.fromTo('.stat-card',
+    { opacity:0, y:20, scale:0.9 },
+    { opacity:1, y:0, scale:1, stagger:0.1, duration:0.5, ease:'back.out(1.5)', delay:0.3 }
+  );
+}
+
+/* ─── INIT ────────────────────────────────────────────────── */
+buildKeyboard();
+newTest();
+updateTimerDisplay();
+updateTimerRing(1);
+
+window.addEventListener('load', () => {
+  setTimeout(runIntro, 200);
+});
+
+/* Keyboard shortcut: / to focus */
+document.addEventListener('keydown', e => {
+  if(e.key==='/' && document.activeElement !== document.getElementById('typing-input')){
+    e.preventDefault();
+    document.getElementById('typing-input').focus();
+  }
+});
+</script>
+</body>
+</html>
